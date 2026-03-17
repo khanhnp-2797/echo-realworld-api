@@ -5,6 +5,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/khanhnp-2797/echo-realworld-api/internal/dto"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/service"
 )
 
@@ -17,16 +18,12 @@ func NewTagHandler(tagSvc service.TagService) *TagHandler {
 	return &TagHandler{tagSvc: tagSvc}
 }
 
-type tagsResponse struct {
-	Tags []string `json:"tags"`
-}
-
 // API GET /api/tags — Get all tags (public)
 //
 // @Summary   List all tags
 // @Tags      tags
 // @Produce   json
-// @Success   200 {object} tagsResponse
+// @Success   200 {object} dto.TagsResponse
 // @Failure   500 {object} map[string]any "Internal server error"
 // @Router    /tags [get]
 func (h *TagHandler) ListTags(c echo.Context) error {
@@ -40,5 +37,5 @@ func (h *TagHandler) ListTags(c echo.Context) error {
 		names = append(names, t.Name)
 	}
 
-	return c.JSON(http.StatusOK, tagsResponse{Tags: names})
+	return c.JSON(http.StatusOK, dto.TagsResponse{Tags: names})
 }
