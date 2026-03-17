@@ -1,0 +1,408 @@
+basePath: /api
+definitions:
+  handler.addCommentRequest:
+    properties:
+      comment:
+        properties:
+          body:
+            type: string
+        required:
+        - body
+        type: object
+    type: object
+  handler.articleBody:
+    properties:
+      author:
+        $ref: '#/definitions/handler.profileBody'
+      body:
+        type: string
+      createdAt:
+        type: string
+      description:
+        type: string
+      slug:
+        type: string
+      tagList:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  handler.articleResponse:
+    properties:
+      article:
+        $ref: '#/definitions/handler.articleBody'
+    type: object
+  handler.articlesResponse:
+    properties:
+      articles:
+        items:
+          $ref: '#/definitions/handler.articleBody'
+        type: array
+      articlesCount:
+        type: integer
+    type: object
+  handler.commentBody:
+    properties:
+      author:
+        allOf:
+        - $ref: '#/definitions/handler.profileBody'
+        description: Eager-loaded via GORM Preload
+      body:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      updatedAt:
+        type: string
+    type: object
+  handler.commentResponse:
+    properties:
+      comment:
+        $ref: '#/definitions/handler.commentBody'
+    type: object
+  handler.commentsResponse:
+    properties:
+      comments:
+        items:
+          $ref: '#/definitions/handler.commentBody'
+        type: array
+    type: object
+  handler.loginRequest:
+    properties:
+      user:
+        properties:
+          email:
+            type: string
+          password:
+            type: string
+        required:
+        - email
+        - password
+        type: object
+    type: object
+  handler.profileBody:
+    properties:
+      bio:
+        type: string
+      image:
+        type: string
+      username:
+        type: string
+    type: object
+  handler.profileResponse:
+    properties:
+      profile:
+        $ref: '#/definitions/handler.profileBody'
+    type: object
+  handler.registerRequest:
+    properties:
+      user:
+        properties:
+          email:
+            type: string
+          password:
+            minLength: 8
+            type: string
+          username:
+            maxLength: 100
+            minLength: 2
+            type: string
+        required:
+        - email
+        - password
+        - username
+        type: object
+    type: object
+  handler.tagsResponse:
+    properties:
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  handler.userBody:
+    properties:
+      bio:
+        type: string
+      email:
+        type: string
+      image:
+        type: string
+      token:
+        type: string
+      username:
+        type: string
+    type: object
+  handler.userResponse:
+    properties:
+      user:
+        $ref: '#/definitions/handler.userBody'
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: API Support
+  description: Conduit backend implementation using Go + Echo + GORM (PostgreSQL).
+  title: RealWorld Echo API
+  version: "1.0"
+paths:
+  /articles:
+    get:
+      parameters:
+      - description: Filter by tag
+        in: query
+        name: tag
+        type: string
+      - description: Filter by author username
+        in: query
+        name: author
+        type: string
+      - description: Limit (default 20)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.articlesResponse'
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List articles
+      tags:
+      - articles
+  /articles/{slug}:
+    get:
+      parameters:
+      - description: Article slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.articleResponse'
+        "404":
+          description: Article not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get article
+      tags:
+      - articles
+  /articles/{slug}/comments:
+    get:
+      parameters:
+      - description: Article slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.commentsResponse'
+        "404":
+          description: Article not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get comments
+      tags:
+      - articles
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Article slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      - description: Comment body
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.addCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.commentResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Article not found
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: Validation error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add comment
+      tags:
+      - articles
+  /profiles/{username}:
+    get:
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.profileResponse'
+        "404":
+          description: User not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get profile
+      tags:
+      - profiles
+  /tags:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.tagsResponse'
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List all tags
+      tags:
+      - tags
+  /user:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.userResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - users
+  /users:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: User credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.registerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.userResponse'
+        "422":
+          description: Validation error
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Register a new user
+      tags:
+      - users
+  /users/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.userResponse'
+        "401":
+          description: Invalid credentials
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: Validation error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Login and receive a JWT token
+      tags:
+      - users
+securityDefinitions:
+  BearerAuth:
+    description: 'Use format: Token <jwt>'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
