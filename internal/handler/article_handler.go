@@ -2,12 +2,10 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/khanhnp-2797/echo-realworld-api/internal/domain"
+	"github.com/khanhnp-2797/echo-realworld-api/internal/dto"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/middleware"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/repository"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/service"
@@ -26,80 +24,6 @@ func NewArticleHandler(
 	return &ArticleHandler{articleSvc: articleSvc, commentSvc: commentSvc}
 }
 
-// ──────────────────────────── Request / Response DTOs ────────────────────────────
-
-type addCommentRequest struct {
-	Comment struct {
-		Body string `json:"body" validate:"required"`
-	} `json:"comment"`
-}
-
-type articleResponse struct {
-	Article articleBody `json:"article"`
-}
-
-type articlesResponse struct {
-	Articles      []articleBody `json:"articles"`
-	ArticlesCount int64         `json:"articlesCount"`
-}
-
-// articleBody is the public DTO for an Article (no sensitive fields).
-type articleBody struct {
-	Slug        string      `json:"slug"`
-	Title       string      `json:"title"`
-	Description string      `json:"description"`
-	Body        string      `json:"body"`
-	TagList     []string    `json:"tagList"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	UpdatedAt   time.Time   `json:"updatedAt"`
-	Author      profileBody `json:"author"`
-}
-
-type commentResponse struct {
-	Comment commentBody `json:"comment"`
-}
-
-type commentsResponse struct {
-	Comments []commentBody `json:"comments"`
-}
-
-type commentBody struct {
-	ID        uint        `json:"id"`
-	CreatedAt time.Time   `json:"createdAt"`
-	UpdatedAt time.Time   `json:"updatedAt"`
-	Body      string      `json:"body"`
-	Author    profileBody `json:"author"` // Eager-loaded via GORM Preload
-}
-
-// ──────────────────────────── Mappers ────────────────────────────
-
-func toArticleBody(a *domain.Article) articleBody {
-	tags := make([]string, 0, len(a.Tags))
-	for _, t := range a.Tags {
-		tags = append(tags, t.Name)
-	}
-	return articleBody{
-		Slug:        a.Slug,
-		Title:       a.Title,
-		Description: a.Description,
-		Body:        a.Body,
-		TagList:     tags,
-		CreatedAt:   a.CreatedAt,
-		UpdatedAt:   a.UpdatedAt,
-		Author:      toProfileBody(&a.Author),
-	}
-}
-
-func toCommentBody(c *domain.Comment) commentBody {
-	return commentBody{
-		ID:        c.ID,
-		CreatedAt: c.CreatedAt,
-		UpdatedAt: c.UpdatedAt,
-		Body:      c.Body,
-		Author:    toProfileBody(&c.Author),
-	}
-}
-
 // ──────────────────────────── Handlers ────────────────────────────
 
 // API GET /api/articles — List articles with optional filters (public)
@@ -111,11 +35,10 @@ func toCommentBody(c *domain.Comment) commentBody {
 // @Param     author query string false "Filter by author username"
 // @Param     limit  query int    false "Limit (default 20)"
 // @Param     offset query int    false "Offset (default 0)"
-// @Success   200 {object} articlesResponse
+// @Success   200 {object} dto.ArticlesResponse
 // @Failure   500 {object} map[string]any "Internal server error"
 // @Router    /articles [get]
 func (h *ArticleHandler) ListArticles(c echo.Context) error {
-	// c.Bind() reads query params declared via struct tags
 	filter := repository.ArticleFilter{
 		Tag:    c.QueryParam("tag"),
 		Author: c.QueryParam("author"),
@@ -128,13 +51,12 @@ func (h *ArticleHandler) ListArticles(c echo.Context) error {
 		return handleServiceError(err)
 	}
 
-	bodies := make([]articleBody, 0, len(articles))
+	bodies := make([]dto.ArticleBody, 0, len(articles))
 	for _, a := range articles {
-		bodies = append(bodies, toArticleBody(a))
+		bodies = append(bodies, dto.ToArticleBody(a))
 	}
 
-	// c.JSON() serialises the DTO and writes Content-Type: application/json
-	return c.JSON(http.StatusOK, articlesResponse{Articles: bodies, ArticlesCount: count})
+	return c.JSON(http.StatusOK, dto.ArticlesResponse{Articles: bodies, ArticlesCount: count})
 }
 
 // API GET /api/articles/:slug — Get a single article by slug (public)
@@ -143,18 +65,18 @@ func (h *ArticleHandler) ListArticles(c echo.Context) error {
 // @Tags      articles
 // @Produce   json
 // @Param     slug path string true "Article slug"
-// @Success   200 {object} articleResponse
+// @Success   200 {object} dto.ArticleResponse
 // @Failure   404 {object} map[string]any "Article not found"
 // @Router    /articles/{slug} [get]
 func (h *ArticleHandler) GetArticle(c echo.Context) error {
-	slug := c.Param("slug") // path param via Echo routing :slug
+	slug := c.Param("slug")
 
 	article, err := h.articleSvc.GetBySlug(c.Request().Context(), slug)
 	if err != nil {
 		return handleServiceError(err)
 	}
 
-	return c.JSON(http.StatusOK, articleResponse{Article: toArticleBody(article)})
+	return c.JSON(http.StatusOK, dto.ArticleResponse{Article: dto.ToArticleBody(article)})
 }
 
 // API POST /api/articles/:slug/comments — Add a comment to an article (auth required)
@@ -165,15 +87,14 @@ func (h *ArticleHandler) GetArticle(c echo.Context) error {
 // @Accept    json
 // @Produce   json
 // @Param     slug path string           true "Article slug"
-// @Param     body body addCommentRequest true "Comment body"
-// @Success   201 {object} commentResponse
+// @Param     body body dto.AddCommentRequest true "Comment body"
+// @Success   201 {object} dto.CommentResponse
 // @Failure   401 {object} map[string]any "Unauthorized"
 // @Failure   404 {object} map[string]any "Article not found"
 // @Failure   422 {object} map[string]any "Validation error"
 // @Router    /articles/{slug}/comments [post]
 func (h *ArticleHandler) AddComment(c echo.Context) error {
-	var req addCommentRequest
-	// bindAndValidate: c.Bind() + c.Validate() in one step
+	var req dto.AddCommentRequest
 	if err := bindAndValidate(c, &req); err != nil {
 		return err
 	}
@@ -186,7 +107,7 @@ func (h *ArticleHandler) AddComment(c echo.Context) error {
 		return handleServiceError(err)
 	}
 
-	return c.JSON(http.StatusCreated, commentResponse{Comment: toCommentBody(comment)})
+	return c.JSON(http.StatusCreated, dto.CommentResponse{Comment: dto.ToCommentBody(comment)})
 }
 
 // API GET /api/articles/:slug/comments — Get all comments for an article (public)
@@ -195,7 +116,7 @@ func (h *ArticleHandler) AddComment(c echo.Context) error {
 // @Tags      articles
 // @Produce   json
 // @Param     slug path string true "Article slug"
-// @Success   200 {object} commentsResponse
+// @Success   200 {object} dto.CommentsResponse
 // @Failure   404 {object} map[string]any "Article not found"
 // @Router    /articles/{slug}/comments [get]
 func (h *ArticleHandler) GetComments(c echo.Context) error {
@@ -206,22 +127,10 @@ func (h *ArticleHandler) GetComments(c echo.Context) error {
 		return handleServiceError(err)
 	}
 
-	bodies := make([]commentBody, 0, len(comments))
+	bodies := make([]dto.CommentBody, 0, len(comments))
 	for _, cm := range comments {
-		bodies = append(bodies, toCommentBody(cm))
+		bodies = append(bodies, dto.ToCommentBody(cm))
 	}
 
-	return c.JSON(http.StatusOK, commentsResponse{Comments: bodies})
+	return c.JSON(http.StatusOK, dto.CommentsResponse{Comments: bodies})
 }
-
-// ──────────────────────────── Utility ────────────────────────────
-
-func queryInt(c echo.Context, key string, def int) int {
-	v, err := strconv.Atoi(c.QueryParam(key))
-	if err != nil || v < 0 {
-		return def
-	}
-	return v
-}
-
-// ArticleHandler handles all article and comment endpoints.

@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
@@ -46,4 +47,13 @@ func handleServiceError(err error) *echo.HTTPError {
 	default:
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
+}
+
+// queryInt reads an integer query param, returning def when absent or invalid.
+func queryInt(c echo.Context, key string, def int) int {
+	v, err := strconv.Atoi(c.QueryParam(key))
+	if err != nil || v < 0 {
+		return def
+	}
+	return v
 }
