@@ -13,6 +13,9 @@ type CommentService interface {
 	// Task 3: Comments
 	AddComment(ctx context.Context, slug string, authorID uint, body string) (*domain.Comment, error)
 	GetComments(ctx context.Context, slug string) ([]*domain.Comment, error)
+
+	// Task 6: Delete own comment
+	DeleteComment(ctx context.Context, id uint) error
 }
 
 type commentService struct {
@@ -63,3 +66,8 @@ func (s *commentService) GetComments(ctx context.Context, slug string) ([]*domai
 	return s.commentRepo.FindByArticleID(ctx, article.ID)
 }
 
+// DeleteComment deletes a comment by ID.
+// Ownership is enforced by the CommentOwner middleware before this is called.
+func (s *commentService) DeleteComment(ctx context.Context, id uint) error {
+	return s.commentRepo.Delete(ctx, id)
+}

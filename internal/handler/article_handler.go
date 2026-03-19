@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 
@@ -15,13 +16,19 @@ import (
 type ArticleHandler struct {
 	articleSvc service.ArticleService
 	commentSvc service.CommentService
+	userSvc    service.UserService // needed for following checks
 }
 
 func NewArticleHandler(
 	articleSvc service.ArticleService,
 	commentSvc service.CommentService,
+	userSvc service.UserService,
 ) *ArticleHandler {
-	return &ArticleHandler{articleSvc: articleSvc, commentSvc: commentSvc}
+	return &ArticleHandler{
+		articleSvc: articleSvc,
+		commentSvc: commentSvc,
+		userSvc:    userSvc,
+	}
 }
 
 // ──────────────────────────── Handlers ────────────────────────────
@@ -31,19 +38,22 @@ func NewArticleHandler(
 // @Summary   List articles
 // @Tags      articles
 // @Produce   json
-// @Param     tag    query string false "Filter by tag"
-// @Param     author query string false "Filter by author username"
-// @Param     limit  query int    false "Limit (default 20)"
-// @Param     offset query int    false "Offset (default 0)"
+// @Param     tag       query string false "Filter by tag"
+// @Param     author    query string false "Filter by author username"
+// @Param     favorited query string false "Filter by username who favorited"
+// @Param     limit     query int    false "Limit (default 20)"
+// @Param     offset    query int    false "Offset (default 0)"
 // @Success   200 {object} dto.ArticlesResponse
 // @Failure   500 {object} map[string]any "Internal server error"
 // @Router    /articles [get]
 func (h *ArticleHandler) ListArticles(c echo.Context) error {
+	viewerID := middleware.OptionalUserIDFromContext(c)
 	filter := repository.ArticleFilter{
-		Tag:    c.QueryParam("tag"),
-		Author: c.QueryParam("author"),
-		Limit:  queryInt(c, "limit", 20),
-		Offset: queryInt(c, "offset", 0),
+		Tag:       c.QueryParam("tag"),
+		Author:    c.QueryParam("author"),
+		Favorited: c.QueryParam("favorited"),
+		Limit:     queryInt(c, "limit", 20),
+		Offset:    queryInt(c, "offset", 0),
 	}
 
 	articles, count, err := h.articleSvc.List(c.Request().Context(), filter)
@@ -53,7 +63,40 @@ func (h *ArticleHandler) ListArticles(c echo.Context) error {
 
 	bodies := make([]dto.ArticleBody, 0, len(articles))
 	for _, a := range articles {
-		bodies = append(bodies, dto.ToArticleBody(a))
+		following := h.userSvc.IsFollowing(c.Request().Context(), viewerID, a.AuthorID)
+		bodies = append(bodies, dto.ToArticleBody(a, viewerID, following))
+	}
+
+	return c.JSON(http.StatusOK, dto.ArticlesResponse{Articles: bodies, ArticlesCount: count})
+}
+
+// API GET /api/articles/feed — Feed from followed users (auth required)
+//
+// @Summary   Get feed
+// @Tags      articles
+// @Security  BearerAuth
+// @Produce   json
+// @Param     limit  query int false "Limit (default 20)"
+// @Param     offset query int false "Offset (default 0)"
+// @Success   200 {object} dto.ArticlesResponse
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Router    /articles/feed [get]
+func (h *ArticleHandler) Feed(c echo.Context) error {
+	viewerID := middleware.UserIDFromContext(c)
+	filter := repository.ArticleFilter{
+		Limit:  queryInt(c, "limit", 20),
+		Offset: queryInt(c, "offset", 0),
+	}
+
+	articles, count, err := h.articleSvc.Feed(c.Request().Context(), viewerID, filter)
+	if err != nil {
+		return handleServiceError(err)
+	}
+
+	bodies := make([]dto.ArticleBody, 0, len(articles))
+	for _, a := range articles {
+		// All articles in the feed are authored by followed users → following=true
+		bodies = append(bodies, dto.ToArticleBody(a, viewerID, true))
 	}
 
 	return c.JSON(http.StatusOK, dto.ArticlesResponse{Articles: bodies, ArticlesCount: count})
@@ -70,13 +113,63 @@ func (h *ArticleHandler) ListArticles(c echo.Context) error {
 // @Router    /articles/{slug} [get]
 func (h *ArticleHandler) GetArticle(c echo.Context) error {
 	slug := c.Param("slug")
+	viewerID := middleware.OptionalUserIDFromContext(c)
 
 	article, err := h.articleSvc.GetBySlug(c.Request().Context(), slug)
 	if err != nil {
 		return handleServiceError(err)
 	}
 
-	return c.JSON(http.StatusOK, dto.ArticleResponse{Article: dto.ToArticleBody(article)})
+	following := h.userSvc.IsFollowing(c.Request().Context(), viewerID, article.AuthorID)
+	return c.JSON(http.StatusOK, dto.ArticleResponse{Article: dto.ToArticleBody(article, viewerID, following)})
+}
+
+// API POST /api/articles/:slug/favorite — Favorite an article (auth required)
+//
+// @Summary   Favorite article
+// @Tags      articles
+// @Security  BearerAuth
+// @Produce   json
+// @Param     slug path string true "Article slug"
+// @Success   200 {object} dto.ArticleResponse
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Failure   404 {object} map[string]any "Article not found"
+// @Router    /articles/{slug}/favorite [post]
+func (h *ArticleHandler) FavoriteArticle(c echo.Context) error {
+	slug := c.Param("slug")
+	viewerID := middleware.UserIDFromContext(c)
+
+	article, err := h.articleSvc.Favorite(c.Request().Context(), viewerID, slug)
+	if err != nil {
+		return handleServiceError(err)
+	}
+
+	following := h.userSvc.IsFollowing(c.Request().Context(), viewerID, article.AuthorID)
+	return c.JSON(http.StatusOK, dto.ArticleResponse{Article: dto.ToArticleBody(article, viewerID, following)})
+}
+
+// API DELETE /api/articles/:slug/favorite — Unfavorite an article (auth required)
+//
+// @Summary   Unfavorite article
+// @Tags      articles
+// @Security  BearerAuth
+// @Produce   json
+// @Param     slug path string true "Article slug"
+// @Success   200 {object} dto.ArticleResponse
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Failure   404 {object} map[string]any "Article not found"
+// @Router    /articles/{slug}/favorite [delete]
+func (h *ArticleHandler) UnfavoriteArticle(c echo.Context) error {
+	slug := c.Param("slug")
+	viewerID := middleware.UserIDFromContext(c)
+
+	article, err := h.articleSvc.Unfavorite(c.Request().Context(), viewerID, slug)
+	if err != nil {
+		return handleServiceError(err)
+	}
+
+	following := h.userSvc.IsFollowing(c.Request().Context(), viewerID, article.AuthorID)
+	return c.JSON(http.StatusOK, dto.ArticleResponse{Article: dto.ToArticleBody(article, viewerID, following)})
 }
 
 // API POST /api/articles/:slug/comments — Add a comment to an article (auth required)
@@ -107,7 +200,8 @@ func (h *ArticleHandler) AddComment(c echo.Context) error {
 		return handleServiceError(err)
 	}
 
-	return c.JSON(http.StatusCreated, dto.CommentResponse{Comment: dto.ToCommentBody(comment)})
+	// Comment author is the current user — viewers don't follow themselves
+	return c.JSON(http.StatusCreated, dto.CommentResponse{Comment: dto.ToCommentBody(comment, false)})
 }
 
 // API GET /api/articles/:slug/comments — Get all comments for an article (public)
@@ -121,6 +215,7 @@ func (h *ArticleHandler) AddComment(c echo.Context) error {
 // @Router    /articles/{slug}/comments [get]
 func (h *ArticleHandler) GetComments(c echo.Context) error {
 	slug := c.Param("slug")
+	viewerID := middleware.OptionalUserIDFromContext(c)
 
 	comments, err := h.commentSvc.GetComments(c.Request().Context(), slug)
 	if err != nil {
@@ -129,8 +224,36 @@ func (h *ArticleHandler) GetComments(c echo.Context) error {
 
 	bodies := make([]dto.CommentBody, 0, len(comments))
 	for _, cm := range comments {
-		bodies = append(bodies, dto.ToCommentBody(cm))
+		following := h.userSvc.IsFollowing(c.Request().Context(), viewerID, cm.AuthorID)
+		bodies = append(bodies, dto.ToCommentBody(cm, following))
 	}
 
 	return c.JSON(http.StatusOK, dto.CommentsResponse{Comments: bodies})
+}
+
+// API DELETE /api/articles/:slug/comments/:id — Delete own comment (auth + owner required)
+//
+// @Summary   Delete comment
+// @Tags      articles
+// @Security  BearerAuth
+// @Param     slug path string true "Article slug"
+// @Param     id   path int    true "Comment ID"
+// @Success   204
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Failure   403 {object} map[string]any "Forbidden"
+// @Failure   404 {object} map[string]any "Comment not found"
+// @Router    /articles/{slug}/comments/{id} [delete]
+func (h *ArticleHandler) DeleteComment(c echo.Context) error {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid comment id")
+	}
+
+	// Ownership already verified by CommentOwner middleware
+	if err := h.commentSvc.DeleteComment(c.Request().Context(), uint(id)); err != nil {
+		return handleServiceError(err)
+	}
+
+	return c.NoContent(http.StatusNoContent)
 }

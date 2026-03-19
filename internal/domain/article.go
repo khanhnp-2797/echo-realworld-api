@@ -16,4 +16,7 @@ type Article struct {
 	// Many2Many: article_tags join table
 	Tags     []*Tag    `gorm:"many2many:article_tags"`
 	Comments []Comment // HasMany
+
+	// Many2Many: article_favorites join table
+	FavoritedBy []*User `gorm:"many2many:article_favorites"`
 }

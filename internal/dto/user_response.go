@@ -24,9 +24,10 @@ type ProfileResponse struct {
 // ProfileBody is the public DTO for a user profile.
 // Also embedded inside ArticleBody and CommentBody.
 type ProfileBody struct {
-	Username string  `json:"username"`
-	Bio      *string `json:"bio"`
-	Image    *string `json:"image"`
+	Username  string  `json:"username"`
+	Bio       *string `json:"bio"`
+	Image     *string `json:"image"`
+	Following bool    `json:"following"`
 }
 
 // ToUserBody maps a domain.User + JWT token to a UserBody DTO.
@@ -41,10 +42,12 @@ func ToUserBody(u *domain.User, token string) UserBody {
 }
 
 // ToProfileBody maps a domain.User to a ProfileBody DTO.
-func ToProfileBody(u *domain.User) ProfileBody {
+// following must be pre-computed by the caller via UserService.IsFollowing.
+func ToProfileBody(u *domain.User, following bool) ProfileBody {
 	return ProfileBody{
-		Username: u.Username,
-		Bio:      u.Bio,
-		Image:    u.Image,
+		Username:  u.Username,
+		Bio:       u.Bio,
+		Image:     u.Image,
+		Following: following,
 	}
 }
