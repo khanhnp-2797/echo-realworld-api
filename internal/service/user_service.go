@@ -21,6 +21,11 @@ type UserService interface {
 
 	// Task 3: Profiles
 	GetProfile(ctx context.Context, username string) (*domain.User, error)
+
+	// Task 6: Follow / Unfollow
+	Follow(ctx context.Context, followerID uint, username string) (*domain.User, error)
+	Unfollow(ctx context.Context, followerID uint, username string) (*domain.User, error)
+	IsFollowing(ctx context.Context, followerID, followedID uint) bool
 }
 
 type userService struct {
@@ -92,6 +97,39 @@ func (s *userService) GetProfile(ctx context.Context, username string) (*domain.
 		return nil, apperrors.ErrNotFound
 	}
 	return user, nil
+}
+
+// Follow makes followerID follow the user with the given username.
+func (s *userService) Follow(ctx context.Context, followerID uint, username string) (*domain.User, error) {
+	target, err := s.repo.FindByUsername(ctx, username)
+	if err != nil {
+		return nil, apperrors.ErrNotFound
+	}
+	if followerID == target.ID {
+		return nil, apperrors.ErrForbidden
+	}
+	// Ignore duplicate-follow errors (idempotent)
+	_ = s.repo.Follow(ctx, followerID, target.ID)
+	return target, nil
+}
+
+// Unfollow removes the follow relationship.
+func (s *userService) Unfollow(ctx context.Context, followerID uint, username string) (*domain.User, error) {
+	target, err := s.repo.FindByUsername(ctx, username)
+	if err != nil {
+		return nil, apperrors.ErrNotFound
+	}
+	_ = s.repo.Unfollow(ctx, followerID, target.ID)
+	return target, nil
+}
+
+// IsFollowing returns true if followerID follows followedID (safe for unauthenticated calls).
+func (s *userService) IsFollowing(ctx context.Context, followerID, followedID uint) bool {
+	if followerID == 0 {
+		return false
+	}
+	result, _ := s.repo.IsFollowing(ctx, followerID, followedID)
+	return result
 }
 
 // generateToken creates a signed HS256 JWT for the given user ID.

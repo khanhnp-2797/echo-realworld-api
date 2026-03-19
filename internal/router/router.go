@@ -40,22 +40,23 @@ func RegisterRoutes(e *echo.Echo, db *gorm.DB) {
 
 	// Handlers (HTTP layer)
 	userHandler := handler.NewUserHandler(userSvc)
-	articleHandler := handler.NewArticleHandler(articleSvc, commentSvc)
+	articleHandler := handler.NewArticleHandler(articleSvc, commentSvc, userSvc)
 	tagHandler := handler.NewTagHandler(tagSvc)
 
-	registerAPIRoutes(e, cfg.JWT.Secret, userHandler, articleHandler, tagHandler)
+	registerAPIRoutes(e, cfg.JWT.Secret, commentRepo, userHandler, articleHandler, tagHandler)
 }
 
 // New configures and returns the Echo router (for use without RegisterRoutes).
 func New(
 	jwtSecret string,
+	commentRepo repository.CommentRepository,
 	userHandler *handler.UserHandler,
 	articleHandler *handler.ArticleHandler,
 	tagHandler *handler.TagHandler,
 ) *echo.Echo {
 	e := echo.New()
 	e.Use(echomiddleware.CORS())
-	registerAPIRoutes(e, jwtSecret, userHandler, articleHandler, tagHandler)
+	registerAPIRoutes(e, jwtSecret, commentRepo, userHandler, articleHandler, tagHandler)
 	return e
 }
 
@@ -63,6 +64,7 @@ func New(
 func registerAPIRoutes(
 	e *echo.Echo,
 	jwtSecret string,
+	commentRepo repository.CommentRepository,
 	userHandler *handler.UserHandler,
 	articleHandler *handler.ArticleHandler,
 	tagHandler *handler.TagHandler,
@@ -83,15 +85,21 @@ func registerAPIRoutes(
 	api.GET("/user", userHandler.GetCurrentUser, auth) // GET  /api/user
 
 	// ── Task 3: Profiles ──────────────────────────────────────────────────────
-	api.GET("/profiles/:username", userHandler.GetProfile) // GET /api/profiles/:username
+	api.GET("/profiles/:username", userHandler.GetProfile, optAuth)          // GET    /api/profiles/:username
+	api.POST("/profiles/:username/follow", userHandler.FollowUser, auth)     // POST   /api/profiles/:username/follow
+	api.DELETE("/profiles/:username/follow", userHandler.UnfollowUser, auth) // DELETE /api/profiles/:username/follow
 
-	// ── Task 2: Articles (read-only CRUD) ────────────────────────────────────
-	api.GET("/articles", articleHandler.ListArticles, optAuth)     // GET /api/articles
-	api.GET("/articles/:slug", articleHandler.GetArticle, optAuth) // GET /api/articles/:slug
+	// ── Task 2+5: Articles ────────────────────────────────────────────────────
+	api.GET("/articles/feed", articleHandler.Feed, auth)                           // GET    /api/articles/feed   (must be before :slug)
+	api.GET("/articles", articleHandler.ListArticles, optAuth)                     // GET    /api/articles
+	api.GET("/articles/:slug", articleHandler.GetArticle, optAuth)                 // GET    /api/articles/:slug
+	api.POST("/articles/:slug/favorite", articleHandler.FavoriteArticle, auth)     // POST   /api/articles/:slug/favorite
+	api.DELETE("/articles/:slug/favorite", articleHandler.UnfavoriteArticle, auth) // DELETE /api/articles/:slug/favorite
 
-	// ── Task 3: Comments ──────────────────────────────────────────────────────
-	api.POST("/articles/:slug/comments", articleHandler.AddComment, auth) // POST /api/articles/:slug/comments
-	api.GET("/articles/:slug/comments", articleHandler.GetComments)       // GET  /api/articles/:slug/comments
+	// ── Task 3+6: Comments ────────────────────────────────────────────────────
+	api.POST("/articles/:slug/comments", articleHandler.AddComment, auth)                                                // POST   /api/articles/:slug/comments
+	api.GET("/articles/:slug/comments", articleHandler.GetComments, optAuth)                                             // GET    /api/articles/:slug/comments
+	api.DELETE("/articles/:slug/comments/:id", articleHandler.DeleteComment, auth, middleware.CommentOwner(commentRepo)) // DELETE /api/articles/:slug/comments/:id
 
 	// ── Task 1: Tags ──────────────────────────────────────────────────────────
 	api.GET("/tags", tagHandler.ListTags) // GET /api/tags

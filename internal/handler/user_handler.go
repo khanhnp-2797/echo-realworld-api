@@ -105,11 +105,59 @@ func (h *UserHandler) GetCurrentUser(c echo.Context) error {
 // @Router    /profiles/{username} [get]
 func (h *UserHandler) GetProfile(c echo.Context) error {
 	username := c.Param("username")
+	viewerID := middleware.OptionalUserIDFromContext(c)
 
 	user, err := h.userSvc.GetProfile(c.Request().Context(), username)
 	if err != nil {
 		return handleServiceError(err)
 	}
 
-	return c.JSON(http.StatusOK, dto.ProfileResponse{Profile: dto.ToProfileBody(user)})
+	following := h.userSvc.IsFollowing(c.Request().Context(), viewerID, user.ID)
+	return c.JSON(http.StatusOK, dto.ProfileResponse{Profile: dto.ToProfileBody(user, following)})
+}
+
+// API POST /api/profiles/:username/follow — Follow a user (auth required)
+//
+// @Summary   Follow user
+// @Tags      profiles
+// @Security  BearerAuth
+// @Produce   json
+// @Param     username path string true "Username to follow"
+// @Success   200 {object} dto.ProfileResponse
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Failure   404 {object} map[string]any "User not found"
+// @Router    /profiles/{username}/follow [post]
+func (h *UserHandler) FollowUser(c echo.Context) error {
+	username := c.Param("username")
+	followerID := middleware.UserIDFromContext(c)
+
+	user, err := h.userSvc.Follow(c.Request().Context(), followerID, username)
+	if err != nil {
+		return handleServiceError(err)
+	}
+
+	return c.JSON(http.StatusOK, dto.ProfileResponse{Profile: dto.ToProfileBody(user, true)})
+}
+
+// API DELETE /api/profiles/:username/follow — Unfollow a user (auth required)
+//
+// @Summary   Unfollow user
+// @Tags      profiles
+// @Security  BearerAuth
+// @Produce   json
+// @Param     username path string true "Username to unfollow"
+// @Success   200 {object} dto.ProfileResponse
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Failure   404 {object} map[string]any "User not found"
+// @Router    /profiles/{username}/follow [delete]
+func (h *UserHandler) UnfollowUser(c echo.Context) error {
+	username := c.Param("username")
+	followerID := middleware.UserIDFromContext(c)
+
+	user, err := h.userSvc.Unfollow(c.Request().Context(), followerID, username)
+	if err != nil {
+		return handleServiceError(err)
+	}
+
+	return c.JSON(http.StatusOK, dto.ProfileResponse{Profile: dto.ToProfileBody(user, false)})
 }

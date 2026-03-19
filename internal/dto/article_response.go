@@ -19,14 +19,16 @@ type ArticlesResponse struct {
 
 // ArticleBody is the public DTO for an Article.
 type ArticleBody struct {
-	Slug        string      `json:"slug"`
-	Title       string      `json:"title"`
-	Description string      `json:"description"`
-	Body        string      `json:"body"`
-	TagList     []string    `json:"tagList"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	UpdatedAt   time.Time   `json:"updatedAt"`
-	Author      ProfileBody `json:"author"`
+	Slug           string      `json:"slug"`
+	Title          string      `json:"title"`
+	Description    string      `json:"description"`
+	Body           string      `json:"body"`
+	TagList        []string    `json:"tagList"`
+	CreatedAt      time.Time   `json:"createdAt"`
+	UpdatedAt      time.Time   `json:"updatedAt"`
+	Favorited      bool        `json:"favorited"`
+	FavoritesCount int         `json:"favoritesCount"`
+	Author         ProfileBody `json:"author"`
 }
 
 // CommentResponse wraps CommentBody for single-comment endpoints.
@@ -49,30 +51,41 @@ type CommentBody struct {
 }
 
 // ToArticleBody maps a domain.Article to an ArticleBody DTO.
-func ToArticleBody(a *domain.Article) ArticleBody {
+// viewerID is used to compute favorited; following is pre-computed by the caller.
+func ToArticleBody(a *domain.Article, viewerID uint, following bool) ArticleBody {
 	tags := make([]string, 0, len(a.Tags))
 	for _, t := range a.Tags {
 		tags = append(tags, t.Name)
 	}
+	favorited := false
+	for _, u := range a.FavoritedBy {
+		if u.ID == viewerID {
+			favorited = true
+			break
+		}
+	}
 	return ArticleBody{
-		Slug:        a.Slug,
-		Title:       a.Title,
-		Description: a.Description,
-		Body:        a.Body,
-		TagList:     tags,
-		CreatedAt:   a.CreatedAt,
-		UpdatedAt:   a.UpdatedAt,
-		Author:      ToProfileBody(&a.Author),
+		Slug:           a.Slug,
+		Title:          a.Title,
+		Description:    a.Description,
+		Body:           a.Body,
+		TagList:        tags,
+		CreatedAt:      a.CreatedAt,
+		UpdatedAt:      a.UpdatedAt,
+		Favorited:      favorited,
+		FavoritesCount: len(a.FavoritedBy),
+		Author:         ToProfileBody(&a.Author, following),
 	}
 }
 
 // ToCommentBody maps a domain.Comment to a CommentBody DTO.
-func ToCommentBody(c *domain.Comment) CommentBody {
+// following indicates whether the viewer follows the comment author.
+func ToCommentBody(c *domain.Comment, following bool) CommentBody {
 	return CommentBody{
 		ID:        c.ID,
 		CreatedAt: c.CreatedAt,
 		UpdatedAt: c.UpdatedAt,
 		Body:      c.Body,
-		Author:    ToProfileBody(&c.Author),
+		Author:    ToProfileBody(&c.Author, following),
 	}
 }

@@ -43,3 +43,31 @@ func (r *userRepository) FindByUsername(ctx context.Context, username string) (*
 	}
 	return &user, nil
 }
+
+// Follow creates a follower_id → followed_id row in user_follows.
+func (r *userRepository) Follow(ctx context.Context, followerID, followedID uint) error {
+	follower := domain.User{}
+	follower.ID = followerID
+	followed := domain.User{}
+	followed.ID = followedID
+	return r.db.WithContext(ctx).Model(&follower).Association("Following").Append(&followed)
+}
+
+// Unfollow removes the follow relationship.
+func (r *userRepository) Unfollow(ctx context.Context, followerID, followedID uint) error {
+	follower := domain.User{}
+	follower.ID = followerID
+	followed := domain.User{}
+	followed.ID = followedID
+	return r.db.WithContext(ctx).Model(&follower).Association("Following").Delete(&followed)
+}
+
+// IsFollowing returns true if followerID follows followedID.
+func (r *userRepository) IsFollowing(ctx context.Context, followerID, followedID uint) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("user_follows").
+		Where("follower_id = ? AND followed_id = ?", followerID, followedID).
+		Count(&count).Error
+	return count > 0, err
+}
