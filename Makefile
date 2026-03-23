@@ -8,7 +8,7 @@ DB_URL       ?= postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_
 -include .env
 export
 
-.PHONY: build run dev test tidy docker-up docker-down clean swagger migrate-up migrate-down migrate-force
+.PHONY: build run dev test test-handler tidy docker-up docker-down clean swagger migrate-up migrate-down migrate-force
 
 ## build: compile the binary
 build:
@@ -25,6 +25,10 @@ dev:
 ## test: run all tests
 test:
 	go test -v -race ./...
+
+## test-handler: run only handler unit tests
+test-handler:
+	go test -v -race ./test/handler/...
 
 ## tidy: tidy & vendor modules
 tidy:

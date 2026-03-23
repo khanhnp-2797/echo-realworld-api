@@ -12,6 +12,7 @@ type Config struct {
 	App      AppConfig
 	Database DatabaseConfig
 	JWT      JWTConfig
+	Redis    RedisConfig
 }
 
 type AppConfig struct {
@@ -41,6 +42,12 @@ type JWTConfig struct {
 	ExpireHours int
 }
 
+type RedisConfig struct {
+	Addr     string // host:port
+	Password string
+	DB       int
+}
+
 // Load reads configuration from environment variables (.env file is optional).
 func Load() (*Config, error) {
 	// Ignore error — .env is optional (may not exist in production).
@@ -49,6 +56,11 @@ func Load() (*Config, error) {
 	expireHours, err := strconv.Atoi(getEnv("JWT_EXPIRE_HOURS", "72"))
 	if err != nil {
 		expireHours = 72
+	}
+
+	redisDB, err := strconv.Atoi(getEnv("REDIS_DB", "0"))
+	if err != nil {
+		redisDB = 0
 	}
 
 	return &Config{
@@ -67,6 +79,11 @@ func Load() (*Config, error) {
 		JWT: JWTConfig{
 			Secret:      getEnv("JWT_SECRET", "change-me-in-production"),
 			ExpireHours: expireHours,
+		},
+		Redis: RedisConfig{
+			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       redisDB,
 		},
 	}, nil
 }
