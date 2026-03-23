@@ -8,6 +8,7 @@ import (
 	echoSwagger "github.com/swaggo/echo-swagger"
 	"gorm.io/gorm"
 
+	"github.com/khanhnp-2797/echo-realworld-api/internal/cache"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/config"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/handler"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/middleware"
@@ -34,9 +35,13 @@ func RegisterRoutes(e *echo.Echo, db *gorm.DB) {
 
 	// Services (business logic layer)
 	userSvc := service.NewUserService(userRepo, cfg.JWT)
-	articleSvc := service.NewArticleService(articleRepo)
+
+	// Cache layer (Redis — falls back to NoopCache if not configured)
+	redisCache := cache.NewRedisCache(cfg.Redis)
+
+	articleSvc := service.NewCachedArticleService(service.NewArticleService(articleRepo), redisCache)
 	commentSvc := service.NewCommentService(commentRepo, articleRepo)
-	tagSvc := service.NewTagService(tagRepo)
+	tagSvc := service.NewCachedTagService(service.NewTagService(tagRepo), redisCache)
 
 	// Handlers (HTTP layer)
 	userHandler := handler.NewUserHandler(userSvc)
