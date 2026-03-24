@@ -29,6 +29,14 @@ services:
       timeout: 3s
       retries: 5
 
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: realworld_mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -38,6 +46,9 @@ services:
     environment:
       DB_HOST: postgres
       REDIS_ADDR: redis:6379
+      MAIL_HOST: mailhog
+      MAIL_PORT: 1025
+      MAIL_FROM: noreply@realworld.dev
     ports:
       - "8080:8080"
     depends_on:
@@ -45,6 +56,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mailhog:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

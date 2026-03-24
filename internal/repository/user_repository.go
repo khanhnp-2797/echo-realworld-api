@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"github.com/khanhnp-2797/echo-realworld-api/internal/domain"
+	"github.com/khanhnp-2797/echo-realworld-api/pkg/apperrors"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +19,17 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 }
 
 func (r *userRepository) Create(ctx context.Context, user *domain.User) error {
-	return r.db.WithContext(ctx).Create(user).Error
+	if err := r.db.WithContext(ctx).Create(user).Error; err != nil {
+		e := err.Error()
+		if strings.Contains(e, "idx_users_email") {
+			return apperrors.ErrEmailTaken
+		}
+		if strings.Contains(e, "idx_users_username") {
+			return apperrors.ErrUsernameTaken
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *userRepository) FindByID(ctx context.Context, id uint) (*domain.User, error) {

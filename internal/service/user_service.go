@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/config"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/domain"
+	"github.com/khanhnp-2797/echo-realworld-api/internal/mailer"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/repository"
 	"github.com/khanhnp-2797/echo-realworld-api/pkg/apperrors"
 	"golang.org/x/crypto/bcrypt"
@@ -31,10 +33,11 @@ type UserService interface {
 type userService struct {
 	repo   repository.UserRepository
 	jwtCfg config.JWTConfig
+	mailer mailer.Mailer
 }
 
-func NewUserService(repo repository.UserRepository, jwtCfg config.JWTConfig) UserService {
-	return &userService{repo: repo, jwtCfg: jwtCfg}
+func NewUserService(repo repository.UserRepository, jwtCfg config.JWTConfig, m mailer.Mailer) UserService {
+	return &userService{repo: repo, jwtCfg: jwtCfg, mailer: m}
 }
 
 // Register hashes the password and persists a new user, returning a JWT.
@@ -58,6 +61,13 @@ func (s *userService) Register(ctx context.Context, username, email, password st
 	if err != nil {
 		return nil, "", err
 	}
+
+	// Send welcome email asynchronously — do not block the response.
+	go func() {
+		if err := s.mailer.SendWelcome(user.Email, user.Username); err != nil {
+			log.Printf("[mailer] failed to send welcome email to %s: %v", user.Email, err)
+		}
+	}()
 
 	return user, token, nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/khanhnp-2797/echo-realworld-api/internal/cache"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/config"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/handler"
+	"github.com/khanhnp-2797/echo-realworld-api/internal/mailer"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/middleware"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/repository"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/service"
@@ -34,7 +35,8 @@ func RegisterRoutes(e *echo.Echo, db *gorm.DB) {
 	tagRepo := repository.NewTagRepository(db)
 
 	// Services (business logic layer)
-	userSvc := service.NewUserService(userRepo, cfg.JWT)
+	m := mailer.NewSMTPMailer(cfg.Mail)
+	userSvc := service.NewUserService(userRepo, cfg.JWT, m)
 
 	// Cache layer (Redis — falls back to NoopCache if not configured)
 	redisCache := cache.NewRedisCache(cfg.Redis)
