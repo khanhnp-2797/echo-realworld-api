@@ -13,6 +13,7 @@ type Config struct {
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Redis    RedisConfig
+	Mail     MailConfig
 }
 
 type AppConfig struct {
@@ -48,6 +49,14 @@ type RedisConfig struct {
 	DB       int
 }
 
+type MailConfig struct {
+	Host     string
+	Port     int
+	From     string
+	Username string
+	Password string
+}
+
 // Load reads configuration from environment variables (.env file is optional).
 func Load() (*Config, error) {
 	// Ignore error — .env is optional (may not exist in production).
@@ -61,6 +70,11 @@ func Load() (*Config, error) {
 	redisDB, err := strconv.Atoi(getEnv("REDIS_DB", "0"))
 	if err != nil {
 		redisDB = 0
+	}
+
+	mailPort, err := strconv.Atoi(getEnv("MAIL_PORT", "1025"))
+	if err != nil {
+		mailPort = 1025
 	}
 
 	return &Config{
@@ -84,6 +98,13 @@ func Load() (*Config, error) {
 			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       redisDB,
+		},
+		Mail: MailConfig{
+			Host:     getEnv("MAIL_HOST", "localhost"),
+			Port:     mailPort,
+			From:     getEnv("MAIL_FROM", "noreply@realworld.dev"),
+			Username: getEnv("MAIL_USERNAME", ""),
+			Password: getEnv("MAIL_PASSWORD", ""),
 		},
 	}, nil
 }
