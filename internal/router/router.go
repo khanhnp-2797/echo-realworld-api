@@ -40,14 +40,15 @@ func RegisterRoutes(e *echo.Echo, db *gorm.DB) {
 	userSvc := service.NewUserService(userRepo, cfg.JWT, m)
 
 	// Cache layer (Redis — falls back to NoopCache if not configured)
+	rdb := cache.NewRedisClient(cfg.Redis)
 	redisCache := cache.NewRedisCache(cfg.Redis)
 
 	articleSvc := service.NewCachedArticleService(service.NewArticleService(articleRepo, tagRepo), redisCache)
 	commentSvc := service.NewCommentService(commentRepo, articleRepo)
 	tagSvc := service.NewCachedTagService(service.NewTagService(tagRepo), redisCache)
 
-	// WebSocket hub — start the event loop once at startup.
-	hub := ws.NewHub()
+	// WebSocket hub — backed by Redis Pub/Sub for multi-instance support.
+	hub := ws.NewHub(rdb)
 	go hub.Run()
 
 	// Handlers (HTTP layer)
