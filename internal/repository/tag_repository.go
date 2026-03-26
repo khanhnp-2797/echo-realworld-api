@@ -22,8 +22,16 @@ func (r *tagRepository) FindAll(ctx context.Context) ([]*domain.Tag, error) {
 	return tags, err
 }
 
-func (r *tagRepository) FindOrCreate(ctx context.Context, name string) (*domain.Tag, error) {
-	tag := &domain.Tag{Name: name}
-	result := r.db.WithContext(ctx).Where(domain.Tag{Name: name}).FirstOrCreate(tag)
-	return tag, result.Error
+// FindOrCreateByNames resolves a slice of tag name strings to domain.Tag records,
+// creating any that do not yet exist.
+func (r *tagRepository) FindOrCreateByNames(ctx context.Context, names []string) ([]*domain.Tag, error) {
+	tags := make([]*domain.Tag, 0, len(names))
+	for _, name := range names {
+		tag := &domain.Tag{Name: name}
+		if err := r.db.WithContext(ctx).Where(domain.Tag{Name: name}).FirstOrCreate(tag).Error; err != nil {
+			return nil, err
+		}
+		tags = append(tags, tag)
+	}
+	return tags, nil
 }

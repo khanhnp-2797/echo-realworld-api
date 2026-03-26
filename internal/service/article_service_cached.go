@@ -61,8 +61,20 @@ func (s *cachedArticleService) List(ctx context.Context, filter repository.Artic
 
 // All remaining methods delegate directly to the inner service.
 
+func (s *cachedArticleService) Create(ctx context.Context, authorID uint, title, description, body string, tagList []string) (*domain.Article, error) {
+	return s.inner.Create(ctx, authorID, title, description, body, tagList)
+}
+
 func (s *cachedArticleService) GetBySlug(ctx context.Context, slug string) (*domain.Article, error) {
 	return s.inner.GetBySlug(ctx, slug)
+}
+
+func (s *cachedArticleService) Update(ctx context.Context, slug string, authorID uint, title, description, body *string) (*domain.Article, error) {
+	return s.inner.Update(ctx, slug, authorID, title, description, body)
+}
+
+func (s *cachedArticleService) DeleteBySlug(ctx context.Context, slug string, authorID uint) error {
+	return s.inner.DeleteBySlug(ctx, slug, authorID)
 }
 
 func (s *cachedArticleService) Feed(ctx context.Context, userID uint, filter repository.ArticleFilter) ([]*domain.Article, int64, error) {

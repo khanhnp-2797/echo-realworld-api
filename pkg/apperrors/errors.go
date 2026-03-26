@@ -11,4 +11,5 @@ var (
 	ErrUsernameTaken = errors.New("username already taken")
 	ErrInvalidCreds  = errors.New("invalid email or password")
 	ErrInternal      = errors.New("internal server error")
+	ErrConflict      = errors.New("resource already exists")
 )
