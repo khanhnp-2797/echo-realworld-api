@@ -30,8 +30,11 @@ type UserRepository interface {
 
 // ArticleRepository — persistence operations for Article.
 type ArticleRepository interface {
+	Create(ctx context.Context, article *domain.Article) error
 	FindBySlug(ctx context.Context, slug string) (*domain.Article, error)
 	List(ctx context.Context, filter ArticleFilter) ([]*domain.Article, int64, error)
+	Update(ctx context.Context, article *domain.Article) error
+	Delete(ctx context.Context, slug string, authorID uint) error
 
 	// Feed: articles from followed users
 	Feed(ctx context.Context, userID uint, filter ArticleFilter) ([]*domain.Article, int64, error)
@@ -52,4 +55,6 @@ type CommentRepository interface {
 // TagRepository — persistence operations for Tag.
 type TagRepository interface {
 	FindAll(ctx context.Context) ([]*domain.Tag, error)
+	// FindOrCreateByNames returns existing tags and creates any that don't exist.
+	FindOrCreateByNames(ctx context.Context, names []string) ([]*domain.Tag, error)
 }

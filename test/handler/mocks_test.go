@@ -98,6 +98,27 @@ func (m *MockArticleService) Feed(ctx context.Context, userID uint, filter repos
 	return nil, 0, args.Error(2)
 }
 
+func (m *MockArticleService) Create(ctx context.Context, authorID uint, title, description, body string, tagList []string) (*domain.Article, error) {
+	args := m.Called(ctx, authorID, title, description, body, tagList)
+	if a, ok := args.Get(0).(*domain.Article); ok {
+		return a, args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *MockArticleService) Update(ctx context.Context, slug string, authorID uint, title, description, body *string) (*domain.Article, error) {
+	args := m.Called(ctx, slug, authorID, title, description, body)
+	if a, ok := args.Get(0).(*domain.Article); ok {
+		return a, args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *MockArticleService) DeleteBySlug(ctx context.Context, slug string, authorID uint) error {
+	args := m.Called(ctx, slug, authorID)
+	return args.Error(0)
+}
+
 func (m *MockArticleService) Favorite(ctx context.Context, userID uint, slug string) (*domain.Article, error) {
 	args := m.Called(ctx, userID, slug)
 	if a, ok := args.Get(0).(*domain.Article); ok {

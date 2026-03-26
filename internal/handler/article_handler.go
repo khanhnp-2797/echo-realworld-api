@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/khanhnp-2797/echo-realworld-api/internal/middleware"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/repository"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/service"
+	"github.com/khanhnp-2797/echo-realworld-api/internal/ws"
 )
 
 // ArticleHandler handles article and comment endpoints.
@@ -17,6 +20,7 @@ type ArticleHandler struct {
 	articleSvc service.ArticleService
 	commentSvc service.CommentService
 	userSvc    service.UserService // needed for following checks
+	hub        *ws.Hub             // nil = WebSocket broadcast disabled
 }
 
 func NewArticleHandler(
@@ -31,7 +35,105 @@ func NewArticleHandler(
 	}
 }
 
+// SetHub attaches the WebSocket hub so AddComment can broadcast events.
+func (h *ArticleHandler) SetHub(hub *ws.Hub) { h.hub = hub }
+
 // ──────────────────────────── Handlers ────────────────────────────
+
+// API POST /api/articles — Create a new article (auth required)
+//
+// @Summary   Create article
+// @Tags      articles
+// @Security  BearerAuth
+// @Accept    json
+// @Produce   json
+// @Param     body body dto.CreateArticleRequest true "Article data"
+// @Success   201 {object} dto.ArticleResponse
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Failure   422 {object} map[string]any "Validation error"
+// @Router    /articles [post]
+func (h *ArticleHandler) CreateArticle(c echo.Context) error {
+	var req dto.CreateArticleRequest
+	if err := bindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	authorID := middleware.UserIDFromContext(c)
+	article, err := h.articleSvc.Create(
+		c.Request().Context(),
+		authorID,
+		req.Article.Title,
+		req.Article.Description,
+		req.Article.Body,
+		req.Article.TagList,
+	)
+	if err != nil {
+		return handleServiceError(err)
+	}
+
+	following := h.userSvc.IsFollowing(c.Request().Context(), authorID, article.AuthorID)
+	return c.JSON(http.StatusCreated, dto.ArticleResponse{Article: dto.ToArticleBody(article, authorID, following)})
+}
+
+// API PUT /api/articles/:slug — Update own article (auth required)
+//
+// @Summary   Update article
+// @Tags      articles
+// @Security  BearerAuth
+// @Accept    json
+// @Produce   json
+// @Param     slug path string                  true "Article slug"
+// @Param     body body dto.UpdateArticleRequest true "Fields to update"
+// @Success   200 {object} dto.ArticleResponse
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Failure   403 {object} map[string]any "Forbidden"
+// @Failure   404 {object} map[string]any "Not found"
+// @Router    /articles/{slug} [put]
+func (h *ArticleHandler) UpdateArticle(c echo.Context) error {
+	var req dto.UpdateArticleRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
+	}
+
+	slug := c.Param("slug")
+	authorID := middleware.UserIDFromContext(c)
+
+	article, err := h.articleSvc.Update(
+		c.Request().Context(),
+		slug,
+		authorID,
+		req.Article.Title,
+		req.Article.Description,
+		req.Article.Body,
+	)
+	if err != nil {
+		return handleServiceError(err)
+	}
+
+	following := h.userSvc.IsFollowing(c.Request().Context(), authorID, article.AuthorID)
+	return c.JSON(http.StatusOK, dto.ArticleResponse{Article: dto.ToArticleBody(article, authorID, following)})
+}
+
+// API DELETE /api/articles/:slug — Delete own article (auth required)
+//
+// @Summary   Delete article
+// @Tags      articles
+// @Security  BearerAuth
+// @Param     slug path string true "Article slug"
+// @Success   204 "No Content"
+// @Failure   401 {object} map[string]any "Unauthorized"
+// @Failure   403 {object} map[string]any "Forbidden"
+// @Failure   404 {object} map[string]any "Not found"
+// @Router    /articles/{slug} [delete]
+func (h *ArticleHandler) DeleteArticle(c echo.Context) error {
+	slug := c.Param("slug")
+	authorID := middleware.UserIDFromContext(c)
+
+	if err := h.articleSvc.DeleteBySlug(c.Request().Context(), slug, authorID); err != nil {
+		return handleServiceError(err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
 
 // API GET /api/articles — List articles with optional filters (public)
 //
@@ -200,8 +302,26 @@ func (h *ArticleHandler) AddComment(c echo.Context) error {
 		return handleServiceError(err)
 	}
 
+	body := dto.ToCommentBody(comment, false)
+
+	// Broadcast to all WebSocket subscribers watching this article's comments.
+	if h.hub != nil {
+		type wsEvent struct {
+			Type    string          `json:"type"`
+			Comment dto.CommentBody `json:"comment"`
+		}
+		if payload, err := json.Marshal(wsEvent{Type: "new_comment", Comment: body}); err == nil {
+			log.Printf("[ws] broadcasting new_comment slug=%s", slug)
+			h.hub.Broadcast(slug, payload)
+		} else {
+			log.Printf("[ws] failed to marshal comment event: %v", err)
+		}
+	} else {
+		log.Printf("[ws] hub is nil, skipping broadcast")
+	}
+
 	// Comment author is the current user — viewers don't follow themselves
-	return c.JSON(http.StatusCreated, dto.CommentResponse{Comment: dto.ToCommentBody(comment, false)})
+	return c.JSON(http.StatusCreated, dto.CommentResponse{Comment: body})
 }
 
 // API GET /api/articles/:slug/comments — Get all comments for an article (public)

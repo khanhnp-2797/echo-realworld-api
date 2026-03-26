@@ -15,6 +15,7 @@ import (
 	"github.com/khanhnp-2797/echo-realworld-api/internal/middleware"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/repository"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/service"
+	"github.com/khanhnp-2797/echo-realworld-api/internal/ws"
 )
 
 // RegisterRoutes wires all repositories, services, and handlers onto an
@@ -41,16 +42,22 @@ func RegisterRoutes(e *echo.Echo, db *gorm.DB) {
 	// Cache layer (Redis — falls back to NoopCache if not configured)
 	redisCache := cache.NewRedisCache(cfg.Redis)
 
-	articleSvc := service.NewCachedArticleService(service.NewArticleService(articleRepo), redisCache)
+	articleSvc := service.NewCachedArticleService(service.NewArticleService(articleRepo, tagRepo), redisCache)
 	commentSvc := service.NewCommentService(commentRepo, articleRepo)
 	tagSvc := service.NewCachedTagService(service.NewTagService(tagRepo), redisCache)
+
+	// WebSocket hub — start the event loop once at startup.
+	hub := ws.NewHub()
+	go hub.Run()
 
 	// Handlers (HTTP layer)
 	userHandler := handler.NewUserHandler(userSvc)
 	articleHandler := handler.NewArticleHandler(articleSvc, commentSvc, userSvc)
+	articleHandler.SetHub(hub)
 	tagHandler := handler.NewTagHandler(tagSvc)
+	wsHandler := handler.NewWSHandler(hub)
 
-	registerAPIRoutes(e, cfg.JWT.Secret, commentRepo, userHandler, articleHandler, tagHandler)
+	registerAPIRoutes(e, cfg.JWT.Secret, commentRepo, userHandler, articleHandler, tagHandler, wsHandler)
 }
 
 // New configures and returns the Echo router (for use without RegisterRoutes).
@@ -60,10 +67,11 @@ func New(
 	userHandler *handler.UserHandler,
 	articleHandler *handler.ArticleHandler,
 	tagHandler *handler.TagHandler,
+	wsHandler *handler.WSHandler,
 ) *echo.Echo {
 	e := echo.New()
 	e.Use(echomiddleware.CORS())
-	registerAPIRoutes(e, jwtSecret, commentRepo, userHandler, articleHandler, tagHandler)
+	registerAPIRoutes(e, jwtSecret, commentRepo, userHandler, articleHandler, tagHandler, wsHandler)
 	return e
 }
 
@@ -75,6 +83,7 @@ func registerAPIRoutes(
 	userHandler *handler.UserHandler,
 	articleHandler *handler.ArticleHandler,
 	tagHandler *handler.TagHandler,
+	wsHandler *handler.WSHandler,
 ) {
 	e.Use(echomiddleware.CORS())
 
@@ -99,7 +108,10 @@ func registerAPIRoutes(
 	// ── Task 2+5: Articles ────────────────────────────────────────────────────
 	api.GET("/articles/feed", articleHandler.Feed, auth)                           // GET    /api/articles/feed   (must be before :slug)
 	api.GET("/articles", articleHandler.ListArticles, optAuth)                     // GET    /api/articles
+	api.POST("/articles", articleHandler.CreateArticle, auth)                      // POST   /api/articles
 	api.GET("/articles/:slug", articleHandler.GetArticle, optAuth)                 // GET    /api/articles/:slug
+	api.PUT("/articles/:slug", articleHandler.UpdateArticle, auth)                 // PUT    /api/articles/:slug
+	api.DELETE("/articles/:slug", articleHandler.DeleteArticle, auth)              // DELETE /api/articles/:slug
 	api.POST("/articles/:slug/favorite", articleHandler.FavoriteArticle, auth)     // POST   /api/articles/:slug/favorite
 	api.DELETE("/articles/:slug/favorite", articleHandler.UnfavoriteArticle, auth) // DELETE /api/articles/:slug/favorite
 
@@ -110,4 +122,9 @@ func registerAPIRoutes(
 
 	// ── Task 1: Tags ──────────────────────────────────────────────────────────
 	api.GET("/tags", tagHandler.ListTags) // GET /api/tags
+
+	// ── WebSocket: real-time comment feed ─────────────────────────────────────
+	// WS  /ws/articles/:slug/comments
+	// Connect to receive live "new_comment" events for the given article.
+	e.GET("/ws/articles/:slug/comments", wsHandler.ServeComments)
 }

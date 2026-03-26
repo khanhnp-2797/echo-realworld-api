@@ -1,6 +1,6 @@
 basePath: /api
 definitions:
-  handler.addCommentRequest:
+  dto.AddCommentRequest:
     properties:
       comment:
         properties:
@@ -10,16 +10,20 @@ definitions:
         - body
         type: object
     type: object
-  handler.articleBody:
+  dto.ArticleBody:
     properties:
       author:
-        $ref: '#/definitions/handler.profileBody'
+        $ref: '#/definitions/dto.ProfileBody'
       body:
         type: string
       createdAt:
         type: string
       description:
         type: string
+      favorited:
+        type: boolean
+      favoritesCount:
+        type: integer
       slug:
         type: string
       tagList:
@@ -31,26 +35,24 @@ definitions:
       updatedAt:
         type: string
     type: object
-  handler.articleResponse:
+  dto.ArticleResponse:
     properties:
       article:
-        $ref: '#/definitions/handler.articleBody'
+        $ref: '#/definitions/dto.ArticleBody'
     type: object
-  handler.articlesResponse:
+  dto.ArticlesResponse:
     properties:
       articles:
         items:
-          $ref: '#/definitions/handler.articleBody'
+          $ref: '#/definitions/dto.ArticleBody'
         type: array
       articlesCount:
         type: integer
     type: object
-  handler.commentBody:
+  dto.CommentBody:
     properties:
       author:
-        allOf:
-        - $ref: '#/definitions/handler.profileBody'
-        description: Eager-loaded via GORM Preload
+        $ref: '#/definitions/dto.ProfileBody'
       body:
         type: string
       createdAt:
@@ -60,19 +62,43 @@ definitions:
       updatedAt:
         type: string
     type: object
-  handler.commentResponse:
+  dto.CommentResponse:
     properties:
       comment:
-        $ref: '#/definitions/handler.commentBody'
+        $ref: '#/definitions/dto.CommentBody'
     type: object
-  handler.commentsResponse:
+  dto.CommentsResponse:
     properties:
       comments:
         items:
-          $ref: '#/definitions/handler.commentBody'
+          $ref: '#/definitions/dto.CommentBody'
         type: array
     type: object
-  handler.loginRequest:
+  dto.CreateArticleRequest:
+    properties:
+      article:
+        properties:
+          body:
+            type: string
+          description:
+            maxLength: 1000
+            minLength: 1
+            type: string
+          tagList:
+            items:
+              type: string
+            type: array
+          title:
+            maxLength: 500
+            minLength: 1
+            type: string
+        required:
+        - body
+        - description
+        - title
+        type: object
+    type: object
+  dto.LoginRequest:
     properties:
       user:
         properties:
@@ -85,21 +111,23 @@ definitions:
         - password
         type: object
     type: object
-  handler.profileBody:
+  dto.ProfileBody:
     properties:
       bio:
         type: string
+      following:
+        type: boolean
       image:
         type: string
       username:
         type: string
     type: object
-  handler.profileResponse:
+  dto.ProfileResponse:
     properties:
       profile:
-        $ref: '#/definitions/handler.profileBody'
+        $ref: '#/definitions/dto.ProfileBody'
     type: object
-  handler.registerRequest:
+  dto.RegisterRequest:
     properties:
       user:
         properties:
@@ -118,14 +146,26 @@ definitions:
         - username
         type: object
     type: object
-  handler.tagsResponse:
+  dto.TagsResponse:
     properties:
       tags:
         items:
           type: string
         type: array
     type: object
-  handler.userBody:
+  dto.UpdateArticleRequest:
+    properties:
+      article:
+        properties:
+          body:
+            type: string
+          description:
+            type: string
+          title:
+            type: string
+        type: object
+    type: object
+  dto.UserBody:
     properties:
       bio:
         type: string
@@ -138,10 +178,10 @@ definitions:
       username:
         type: string
     type: object
-  handler.userResponse:
+  dto.UserResponse:
     properties:
       user:
-        $ref: '#/definitions/handler.userBody'
+        $ref: '#/definitions/dto.UserBody'
     type: object
 host: localhost:8080
 info:
@@ -162,6 +202,10 @@ paths:
         in: query
         name: author
         type: string
+      - description: Filter by username who favorited
+        in: query
+        name: favorited
+        type: string
       - description: Limit (default 20)
         in: query
         name: limit
@@ -176,7 +220,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.articlesResponse'
+            $ref: '#/definitions/dto.ArticlesResponse'
         "500":
           description: Internal server error
           schema:
@@ -185,7 +229,69 @@ paths:
       summary: List articles
       tags:
       - articles
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Article data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateArticleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.ArticleResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: Validation error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create article
+      tags:
+      - articles
   /articles/{slug}:
+    delete:
+      parameters:
+      - description: Article slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete article
+      tags:
+      - articles
     get:
       parameters:
       - description: Article slug
@@ -199,13 +305,55 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.articleResponse'
+            $ref: '#/definitions/dto.ArticleResponse'
         "404":
           description: Article not found
           schema:
             additionalProperties: true
             type: object
       summary: Get article
+      tags:
+      - articles
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Article slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateArticleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ArticleResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update article
       tags:
       - articles
   /articles/{slug}/comments:
@@ -222,7 +370,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.commentsResponse'
+            $ref: '#/definitions/dto.CommentsResponse'
         "404":
           description: Article not found
           schema:
@@ -245,14 +393,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handler.addCommentRequest'
+          $ref: '#/definitions/dto.AddCommentRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/handler.commentResponse'
+            $ref: '#/definitions/dto.CommentResponse'
         "401":
           description: Unauthorized
           schema:
@@ -273,6 +421,129 @@ paths:
       summary: Add comment
       tags:
       - articles
+  /articles/{slug}/comments/{id}:
+    delete:
+      parameters:
+      - description: Article slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      - description: Comment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Comment not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete comment
+      tags:
+      - articles
+  /articles/{slug}/favorite:
+    delete:
+      parameters:
+      - description: Article slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ArticleResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Article not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unfavorite article
+      tags:
+      - articles
+    post:
+      parameters:
+      - description: Article slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ArticleResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Article not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Favorite article
+      tags:
+      - articles
+  /articles/feed:
+    get:
+      parameters:
+      - description: Limit (default 20)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ArticlesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get feed
+      tags:
+      - articles
   /profiles/{username}:
     get:
       parameters:
@@ -287,13 +558,72 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.profileResponse'
+            $ref: '#/definitions/dto.ProfileResponse'
         "404":
           description: User not found
           schema:
             additionalProperties: true
             type: object
       summary: Get profile
+      tags:
+      - profiles
+  /profiles/{username}/follow:
+    delete:
+      parameters:
+      - description: Username to unfollow
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ProfileResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unfollow user
+      tags:
+      - profiles
+    post:
+      parameters:
+      - description: Username to follow
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ProfileResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Follow user
       tags:
       - profiles
   /tags:
@@ -304,7 +634,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.tagsResponse'
+            $ref: '#/definitions/dto.TagsResponse'
         "500":
           description: Internal server error
           schema:
@@ -321,7 +651,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.userResponse'
+            $ref: '#/definitions/dto.UserResponse'
         "401":
           description: Unauthorized
           schema:
@@ -347,14 +677,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handler.registerRequest'
+          $ref: '#/definitions/dto.RegisterRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/handler.userResponse'
+            $ref: '#/definitions/dto.UserResponse'
         "422":
           description: Validation error
           schema:
@@ -378,14 +708,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handler.loginRequest'
+          $ref: '#/definitions/dto.LoginRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.userResponse'
+            $ref: '#/definitions/dto.UserResponse'
         "401":
           description: Invalid credentials
           schema:

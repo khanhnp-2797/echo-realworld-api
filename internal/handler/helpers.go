@@ -40,7 +40,7 @@ func handleServiceError(err error) *echo.HTTPError {
 		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
 	case errors.Is(err, apperrors.ErrForbidden):
 		return echo.NewHTTPError(http.StatusForbidden, err.Error())
-	case errors.Is(err, apperrors.ErrEmailTaken), errors.Is(err, apperrors.ErrUsernameTaken):
+	case errors.Is(err, apperrors.ErrEmailTaken), errors.Is(err, apperrors.ErrUsernameTaken), errors.Is(err, apperrors.ErrConflict):
 		return echo.NewHTTPError(http.StatusUnprocessableEntity, map[string]any{
 			"errors": map[string]any{"body": []string{err.Error()}},
 		})

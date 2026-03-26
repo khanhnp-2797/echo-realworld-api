@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/khanhnp-2797/echo-realworld-api/internal/domain"
+	"github.com/khanhnp-2797/echo-realworld-api/pkg/apperrors"
 	"gorm.io/gorm"
 )
 
@@ -14,6 +15,11 @@ type articleRepository struct {
 // NewArticleRepository returns a GORM-backed ArticleRepository.
 func NewArticleRepository(db *gorm.DB) ArticleRepository {
 	return &articleRepository{db: db}
+}
+
+// Create persists a new article (with its tag associations).
+func (r *articleRepository) Create(ctx context.Context, article *domain.Article) error {
+	return r.db.WithContext(ctx).Create(article).Error
 }
 
 // FindBySlug fetches a single article with Author, Tags, Comments and FavoritedBy preloaded.
@@ -78,6 +84,29 @@ func (r *articleRepository) List(ctx context.Context, filter ArticleFilter) ([]*
 		Limit(limit).Offset(offset).
 		Find(&articles).Error
 	return articles, count, err
+}
+
+// Update saves changed fields and syncs the Tags association.
+func (r *articleRepository) Update(ctx context.Context, article *domain.Article) error {
+	if err := r.db.WithContext(ctx).Save(article).Error; err != nil {
+		return err
+	}
+	// Sync tag list (replaces the full many2many set)
+	return r.db.WithContext(ctx).Model(article).Association("Tags").Replace(article.Tags)
+}
+
+// Delete soft-deletes the article identified by slug, only when it belongs to authorID.
+func (r *articleRepository) Delete(ctx context.Context, slug string, authorID uint) error {
+	result := r.db.WithContext(ctx).
+		Where("slug = ? AND author_id = ?", slug, authorID).
+		Delete(&domain.Article{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return apperrors.ErrNotFound
+	}
+	return nil
 }
 
 // Feed returns paginated articles from users that viewerID follows.
