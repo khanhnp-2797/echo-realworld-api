@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"log"
 
 	"github.com/labstack/echo/v4"
@@ -13,6 +14,7 @@ import (
 	"github.com/khanhnp-2797/echo-realworld-api/internal/handler"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/mailer"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/middleware"
+	"github.com/khanhnp-2797/echo-realworld-api/internal/queue"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/repository"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/service"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/ws"
@@ -36,11 +38,13 @@ func RegisterRoutes(e *echo.Echo, db *gorm.DB) {
 	tagRepo := repository.NewTagRepository(db)
 
 	// Services (business logic layer)
+	rdb := cache.NewRedisClient(cfg.Redis)
 	m := mailer.NewSMTPMailer(cfg.Mail)
-	userSvc := service.NewUserService(userRepo, cfg.JWT, m)
+	emailQueue := queue.NewRedisEmailQueue(rdb)
+	go queue.NewEmailWorker(rdb, m).Start(context.Background())
+	userSvc := service.NewUserService(userRepo, cfg.JWT, emailQueue)
 
 	// Cache layer (Redis — falls back to NoopCache if not configured)
-	rdb := cache.NewRedisClient(cfg.Redis)
 	redisCache := cache.NewRedisCache(cfg.Redis)
 
 	articleSvc := service.NewCachedArticleService(service.NewArticleService(articleRepo, tagRepo), redisCache)
