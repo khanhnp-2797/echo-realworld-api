@@ -8,7 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/config"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/domain"
-	"github.com/khanhnp-2797/echo-realworld-api/internal/mailer"
+	"github.com/khanhnp-2797/echo-realworld-api/internal/queue"
 	"github.com/khanhnp-2797/echo-realworld-api/internal/repository"
 	"github.com/khanhnp-2797/echo-realworld-api/pkg/apperrors"
 	"golang.org/x/crypto/bcrypt"
@@ -31,13 +31,13 @@ type UserService interface {
 }
 
 type userService struct {
-	repo   repository.UserRepository
-	jwtCfg config.JWTConfig
-	mailer mailer.Mailer
+	repo       repository.UserRepository
+	jwtCfg     config.JWTConfig
+	emailQueue queue.EmailQueue
 }
 
-func NewUserService(repo repository.UserRepository, jwtCfg config.JWTConfig, m mailer.Mailer) UserService {
-	return &userService{repo: repo, jwtCfg: jwtCfg, mailer: m}
+func NewUserService(repo repository.UserRepository, jwtCfg config.JWTConfig, q queue.EmailQueue) UserService {
+	return &userService{repo: repo, jwtCfg: jwtCfg, emailQueue: q}
 }
 
 // Register hashes the password and persists a new user, returning a JWT.
@@ -62,12 +62,11 @@ func (s *userService) Register(ctx context.Context, username, email, password st
 		return nil, "", err
 	}
 
-	// Send welcome email asynchronously — do not block the response.
-	go func() {
-		if err := s.mailer.SendWelcome(user.Email, user.Username); err != nil {
-			log.Printf("[mailer] failed to send welcome email to %s: %v", user.Email, err)
-		}
-	}()
+	// Enqueue welcome email — durable, retried by EmailWorker on failure.
+	if err := s.emailQueue.EnqueueWelcome(ctx, user.Email, user.Username); err != nil {
+		// Non-fatal: registration succeeded, email will not be sent.
+		log.Printf("[email-worker] failed to enqueue welcome email for %s: %v", user.Email, err)
+	}
 
 	return user, token, nil
 }
